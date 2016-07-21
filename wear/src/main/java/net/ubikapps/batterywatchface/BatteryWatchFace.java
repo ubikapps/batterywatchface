@@ -33,6 +33,7 @@ import android.os.Message;
 import android.support.wearable.watchface.CanvasWatchFaceService;
 import android.support.wearable.watchface.WatchFaceStyle;
 import android.text.format.Time;
+import android.view.Gravity;
 import android.view.SurfaceHolder;
 import android.view.WindowInsets;
 
@@ -119,6 +120,7 @@ public class BatteryWatchFace extends CanvasWatchFaceService {
                     .setCardPeekMode(WatchFaceStyle.PEEK_MODE_VARIABLE)
                     .setBackgroundVisibility(WatchFaceStyle.BACKGROUND_VISIBILITY_INTERRUPTIVE)
                     .setShowSystemUiTime(false)
+                    .setHotwordIndicatorGravity(Gravity.CENTER_HORIZONTAL|Gravity.BOTTOM)
                     .build());
             Resources resources = BatteryWatchFace.this.getResources();
             mYOffset = resources.getDimension(R.dimen.digital_y_offset);
