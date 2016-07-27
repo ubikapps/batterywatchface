@@ -33,11 +33,14 @@ import android.os.Message;
 import android.support.wearable.watchface.CanvasWatchFaceService;
 import android.support.wearable.watchface.WatchFaceStyle;
 import android.text.format.Time;
+import android.util.Log;
 import android.view.Gravity;
 import android.view.SurfaceHolder;
 import android.view.WindowInsets;
 
 import java.lang.ref.WeakReference;
+import java.text.SimpleDateFormat;
+import java.util.Calendar;
 import java.util.TimeZone;
 import java.util.concurrent.TimeUnit;
 
@@ -86,13 +89,19 @@ public class BatteryWatchFace extends CanvasWatchFaceService {
     }
 
     private class Engine extends CanvasWatchFaceService.Engine {
+        private static final String TAG = "Engine";
         final Handler mUpdateTimeHandler = new EngineHandler(this);
         boolean mRegisteredTimeZoneReceiver = false;
         Paint mBackgroundPaint;
-        Paint mTextPaint;
-        Paint mBatteryPaint;
+        Paint mLargeTextPaint;
+        Paint mSmallTextPaint;
         boolean mAmbient;
         Time mTime;
+        int mBatteryPercent;
+        int mDayOfMonth;
+        String mDateStr;
+        StringBuffer mBatteryPercentStr;
+        SimpleDateFormat mShortMonthFormat = new SimpleDateFormat("dd MMM");
         final BroadcastReceiver mTimeZoneReceiver = new BroadcastReceiver() {
             @Override
             public void onReceive(Context context, Intent intent) {
@@ -100,10 +109,10 @@ public class BatteryWatchFace extends CanvasWatchFaceService {
                 mTime.setToNow();
             }
         };
-        float mXOffset;
         float mYOffset;
 
         float mBatteryYOffset;
+        float mDateYOffset;
         BatteryManager mBatteryManager;
 
         /**
@@ -125,13 +134,14 @@ public class BatteryWatchFace extends CanvasWatchFaceService {
             Resources resources = BatteryWatchFace.this.getResources();
             mYOffset = resources.getDimension(R.dimen.digital_y_offset);
             mBatteryYOffset = resources.getDimension(R.dimen.battery_y_offset);
+            mDateYOffset = resources.getDimension(R.dimen.data_y_offset);
             mBackgroundPaint = new Paint();
             mBackgroundPaint.setColor(resources.getColor(R.color.background));
 
-            mTextPaint = new Paint();
-            mTextPaint = createTextPaint(resources.getColor(R.color.digital_text));
-            mBatteryPaint = new Paint();
-            mBatteryPaint = createTextPaint(resources.getColor(R.color.digital_text));
+            mLargeTextPaint = new Paint();
+            mLargeTextPaint = createTextPaint(resources.getColor(R.color.digital_text));
+            mSmallTextPaint = new Paint();
+            mSmallTextPaint = createTextPaint(resources.getColor(R.color.digital_text));
             mTime = new Time();
         }
 
@@ -192,16 +202,14 @@ public class BatteryWatchFace extends CanvasWatchFaceService {
             // Load resources that have alternate values for round watches.
             Resources resources = BatteryWatchFace.this.getResources();
             boolean isRound = insets.isRound();
-            mXOffset = resources.getDimension(isRound
-                    ? R.dimen.digital_x_offset_round : R.dimen.digital_x_offset);
             float textSize = resources.getDimension(isRound
                     ? R.dimen.digital_text_size_round : R.dimen.digital_text_size);
 
-            mTextPaint.setTextSize(textSize);
+            mLargeTextPaint.setTextSize(textSize);
 
-            float batteryTextSize = resources.getDimension(isRound
+            float smallTextSize = resources.getDimension(isRound
                 ? R.dimen.battery_text_size_round:R.dimen.battery_text_size);
-            mBatteryPaint.setTextSize(batteryTextSize);
+            mSmallTextPaint.setTextSize(smallTextSize);
         }
 
         @Override
@@ -222,7 +230,7 @@ public class BatteryWatchFace extends CanvasWatchFaceService {
             if (mAmbient != inAmbientMode) {
                 mAmbient = inAmbientMode;
                 if (mLowBitAmbient) {
-                    mTextPaint.setAntiAlias(!inAmbientMode);
+                    mLargeTextPaint.setAntiAlias(!inAmbientMode);
                 }
                 invalidate();
             }
@@ -241,15 +249,39 @@ public class BatteryWatchFace extends CanvasWatchFaceService {
                 canvas.drawRect(0, 0, bounds.width(), bounds.height(), mBackgroundPaint);
             }
             int batteryPercent = mBatteryManager.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY);
-            String batteryString = batteryPercent + "%";
-            float batteryXOffset = bounds.centerX() - (mBatteryPaint.measureText(batteryString)/2);
-            canvas.drawText(batteryString, batteryXOffset, mBatteryYOffset, mBatteryPaint);
+            if(batteryPercent != mBatteryPercent || mBatteryPercentStr == null) {
+                mBatteryPercentStr = new StringBuffer();
+                mBatteryPercentStr.append(batteryPercent).append('%');
+            }
+            String batterPercentStr = mBatteryPercentStr.toString();
+            float batteryXOffset = getCenterXOffset(bounds, mSmallTextPaint, batterPercentStr);
+            canvas.drawText(batterPercentStr, batteryXOffset, mBatteryYOffset, mSmallTextPaint);
             // Draw H:MM in ambient mode or H:MM:SS in interactive mode.
             mTime.setToNow();
-            String text = mAmbient
-                    ? String.format("%d:%02d", mTime.hour, mTime.minute)
-                    : String.format("%d:%02d:%02d", mTime.hour, mTime.minute, mTime.second);
-            canvas.drawText(text, mXOffset, mYOffset, mTextPaint);
+            String text = null;
+            if(mAmbient) {
+                text = String.format("%02d:%02d", mTime.hour, mTime.minute);
+            } else {
+                text = String.format("%02d:%02d:%02d", mTime.hour, mTime.minute, mTime.second);
+            }
+
+            float xOffset = getCenterXOffset(bounds, mLargeTextPaint, text);
+            canvas.drawText(text, xOffset, mYOffset, mLargeTextPaint);
+
+            if(mDayOfMonth != mTime.monthDay || mDateStr == null){
+                mDayOfMonth = mTime.monthDay;
+                mDateStr = mShortMonthFormat.format(Calendar.getInstance().getTime());
+            }
+            float dateXOffset = getCenterXOffset(bounds, mSmallTextPaint, mDateStr);
+            canvas.drawText(mDateStr, dateXOffset, mDateYOffset, mSmallTextPaint);
+        }
+
+        private float getCenterXOffset(Rect bounds, Paint textPaint, String text){
+            if(bounds != null && textPaint != null && text != null) {
+                return bounds.centerX() - (textPaint.measureText(text) / 2);
+            } else {
+                return 0F;
+            }
         }
 
         /**
